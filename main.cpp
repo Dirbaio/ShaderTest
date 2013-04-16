@@ -17,7 +17,8 @@ using namespace std;
 using namespace sf;
 
 #define fftSize 8192
-#define texSize 4096
+#define texSize 2048
+#define texRows 4
 #define sampleRate 44100.0
 
 // FFT from dsp.js, see below
@@ -39,8 +40,7 @@ public:
 
 FFT::FFT()
 {
-    int limit = 1,
-            bit = fftSize >> 1;
+    int limit = 1, bit = fftSize >> 1;
     this->reverseTable[0] = 0; // ?!?!?
     while ( limit < fftSize ) {
         for ( int i = 0; i < limit; i++ ) {
@@ -67,7 +67,7 @@ void FFT::forward(float* buffer, int bufferSize)
     for(int i = 0; i < x; i++)
         samples[fftSize-x+i] = buffer[bufferSize-x+i];
 
-    forward(buffer);
+    forward(samples);
 }
 
 void FFT::forward(float* buffer) {
@@ -352,7 +352,7 @@ int main(int argc, char** argv)
     Shader* fftShader = loadShader("vertex.glsl", "fragment-fft.glsl");
     bool running = true;
 
-    tex.create(texSize, 1);
+    tex.create(texSize, texRows);
     tex.setSmooth(true);
 
     short rawbuf[MAXFRAME*2];
@@ -437,15 +437,20 @@ int main(int argc, char** argv)
         }
 
 
-        unsigned char fftTex[texSize*4];
+        unsigned char fftTex[texRows][texSize*4];
         for(int i = 0; i < texSize; i++)
         {
-            float v = fft.spectrum[i]*20;
+            float v = fft.spectrum[i];
+/*            v -= fft.spectrum[i/2]*0.1;
+            v -= fft.spectrum[i/3]*0.05;
+            v -= fft.spectrum[i/4]*0.02;*/
+            v *= 3;
             if(v < 0) v = 0;
             if(v > 1) v = 1;
-            fftTex[i*4] = (unsigned char)(v*255);
+            fftTex[0][i*4] = (unsigned char)(v*255);
+            fftTex[0][i*4] = (unsigned char)(v*2*255);
         }
-        tex.update(fftTex);
+        tex.update(&fftTex[0][0]);
 
         if(frameTime >= 1)
         {
@@ -462,17 +467,20 @@ int main(int argc, char** argv)
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
         glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Clear the depth and colour buffers
-        shader->bind();
-        shader->setParameter("time", tim);
-        shader->setParameter("beat", beat);
+        if(false)
+        {
+            shader->bind();
+            shader->setParameter("time", tim);
+            shader->setParameter("beat", beat);
 
-        glBegin(GL_QUADS);
-        float aspectRatio = (float)theApp->getSize().x / (float)theApp->getSize().y;
-        glTexCoord2f(-aspectRatio, -1); glVertex2f(-1, -1);
-        glTexCoord2f(aspectRatio, -1); glVertex2f(1, -1);
-        glTexCoord2f(aspectRatio, 1); glVertex2f(1, 1);
-        glTexCoord2f(-aspectRatio, 1); glVertex2f(-1, 1);
-        glEnd();
+            glBegin(GL_QUADS);
+            float aspectRatio = (float)theApp->getSize().x / (float)theApp->getSize().y;
+            glTexCoord2f(-aspectRatio, -1); glVertex2f(-1, -1);
+            glTexCoord2f(aspectRatio, -1); glVertex2f(1, -1);
+            glTexCoord2f(aspectRatio, 1); glVertex2f(1, 1);
+            glTexCoord2f(-aspectRatio, 1); glVertex2f(-1, 1);
+            glEnd();
+        }
 
         fftShader->bind();
         fftShader->setParameter("fft", tex);

@@ -60,7 +60,7 @@ void main()
     for(int i = 0; i < itCount; i++)
     {
         w = dist(pos);
-        if(w > 0)
+        if(w > 0.0)
             w += 0.04;
         pos += dir*w;
 
@@ -88,7 +88,7 @@ void main()
             float specAmt = 0.5;
             float specular = clamp (specAmt * pow(dot(-dir, lightDir), 0.3*specPow) , 0.0, 1.0 );
 
-            reflexionIndex = 1+dot(dir, normal)*0.8;
+            reflexionIndex = 1.0+dot(dir, normal)*0.8;
             color += col*(diffuse+specular)*colorApport;
             colorApport *= reflexionIndex;
             if (colorApport < 0.1) break;
