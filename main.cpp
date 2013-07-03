@@ -28,8 +28,8 @@ float tim = 0;
 Window* app;
 float frameTime;
 int frameCount;
-int window_width = 800;
-int window_height = 600;
+int window_width = 512;
+int window_height = 512;
 
 #define texSize 2048
 #define texRows 4
