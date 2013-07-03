@@ -10,7 +10,7 @@ QMAKE_LFLAGS_RELEASE += -O3
 QMAKE_LDFLAGS -= -O1
 QMAKE_LDFLAGS += -O3
 
-LIBS += -lsfml-graphics -lsfml-window -lsfml-system -lsfml-audio -lGL -lGLU -lpulse -lpulse-simple
+LIBS += -lsfml-graphics -lsfml-window -lsfml-system -lsfml-audio -lGLEW -lGL -lGLU -lpulse -lpulse-simple
 SOURCES += main.cpp \
     record.cpp \
     dsp.cpp
@@ -23,4 +23,5 @@ OTHER_FILES += \
     fragment.glsl \
     vertex.glsl \
     fragment.glsl \
-    fragment-fft.glsl
+    fragment-fft.glsl \
+    compute.comp
