@@ -23,8 +23,8 @@ float tim = 0;
 Window* app;
 float frameTime;
 int frameCount;
-int window_width = 800;
-int window_height = 600;
+int window_width = 512;
+int window_height = 512;
 
 #define texSize 2048
 #define texRows 4
@@ -92,8 +92,8 @@ int main(int argc, char** argv)
     tex.setSmooth(true);
 
 
-    sf::Thread thread(&startRecording, &streamRecordCallback);
-    thread.launch(); // start the thread (internally calls threadFunc(5))
+    //sf::Thread thread(&startRecording, &streamRecordCallback);
+  //  thread.launch(); // start the thread (internally calls threadFunc(5))
 
     // Start game loop
     while (app->isOpen())
@@ -152,7 +152,7 @@ int main(int argc, char** argv)
         glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Clear the depth and colour buffers
         if(true)
         {
-            shader->bind();
+            Shader::bind(shader);
             shader->setParameter("time", tim);
             shader->setParameter("beat", beat);
 
@@ -164,8 +164,8 @@ int main(int argc, char** argv)
             glTexCoord2f(-aspectRatio, 1); glVertex2f(-1, 1);
             glEnd();
         }
-
-        fftShader->bind();
+/*
+        Shader::bind(fftShader);
         fftShader->setParameter("fft", tex);
 
         glBegin(GL_QUADS);
@@ -174,11 +174,11 @@ int main(int argc, char** argv)
         glTexCoord2f(1, 1); glVertex2f(1, 1);
         glTexCoord2f(-1, 1); glVertex2f(-1, 1);
         glEnd();
-
+*/
         app->display();
     }
 
-    thread.terminate(); //Terminate ALL the threads!
+ //   thread.terminate(); //Terminate ALL the threads!
     return EXIT_SUCCESS;
 }
 
