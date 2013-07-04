@@ -28,8 +28,8 @@ float tim = 0;
 Window* app;
 float frameTime;
 int frameCount;
-int window_width = 512;
-int window_height = 512;
+int window_width = 1024;
+int window_height = 1024;
 
 #define texSize 2048
 #define texRows 4
@@ -162,6 +162,8 @@ GLuint genRenderProg(GLuint texHandle) {
     return progHandle;
 }
 
+int texsize = 1024;
+
 GLuint genTexture() {
     // We create a single float channel 512^2 texture
     GLuint texHandle;
@@ -171,7 +173,7 @@ GLuint genTexture() {
     glBindTexture(GL_TEXTURE_2D, texHandle);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 512, 512, 0, GL_RED, GL_FLOAT, NULL);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, texsize, texsize, 0, GL_RED, GL_FLOAT, NULL);
 
     // Because we're also using this tex as an image (in order to write to it),
     // we bind it to an image unit as well
@@ -244,14 +246,39 @@ GLuint genComputeProg(GLuint texHandle) {
     return progHandle;
 }
 
-GLuint renderHandle, computeHandle;
 
-void updateTex(float time) {
-    glUseProgram(computeHandle);
-    glUniform1f(glGetUniformLocation(computeHandle, "time"), time);
-    glDispatchCompute(512/16, 512/16, 1); // 512^2 threads in blocks of 16^2
-    checkErrors("Dispatch compute shader");
+struct block
+{
+    float r, g, b, a;
+};
+
+int worldsize = 32;
+
+GLuint genSsbo()
+{
+    GLuint ssbo;
+    glGenBuffers(1, &ssbo);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+    int blockcount = worldsize * worldsize * worldsize;
+    glBufferData(GL_SHADER_STORAGE_BUFFER, blockcount*sizeof(block), NULL, GL_STATIC_DRAW);
+
+    block* blocks = (block*)glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, blockcount*sizeof(block), GL_MAP_WRITE_BIT|GL_MAP_INVALIDATE_BUFFER_BIT);
+
+    srand(time(NULL));
+
+    for(int i = 0; i < blockcount; i++)
+    {
+        blocks[i].r = float(std::rand())/RAND_MAX;
+        blocks[i].g = float(std::rand())/RAND_MAX;
+        blocks[i].b = float(std::rand())/RAND_MAX;
+        blocks[i].a = float(std::rand())/RAND_MAX*0.55;
+    }
+    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+
+    return ssbo;
 }
+
+GLuint renderHandle, computeHandle, ssbo;
 
 int main(int argc, char** argv)
 {
@@ -282,7 +309,10 @@ int main(int argc, char** argv)
     GLuint texHandle = genTexture();
     renderHandle = genRenderProg(texHandle);
     computeHandle = genComputeProg(texHandle);
+    ssbo = genSsbo();
 
+    float ang = 0;
+    float zoom = 30;
     // Start game loop
     while (app->isOpen())
     {
@@ -330,6 +360,15 @@ int main(int argc, char** argv)
             frameCount = 0;
         }
 
+        if(sf::Keyboard::isKeyPressed(sf::Keyboard::Left))
+            ang -= dt;
+        if(sf::Keyboard::isKeyPressed(sf::Keyboard::Right))
+            ang += dt;
+        if(sf::Keyboard::isKeyPressed(sf::Keyboard::A))
+            zoom -= dt*3;
+        if(sf::Keyboard::isKeyPressed(sf::Keyboard::Z))
+            zoom += dt*3;
+
         beat -= dt*2;
         if(beat < 0) beat = 0;
 
@@ -340,7 +379,22 @@ int main(int argc, char** argv)
         glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Clear the depth and colour buffers
         if(true)
         {
-            updateTex(tim);
+            glUseProgram(computeHandle);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo);
+            glUniform1f(glGetUniformLocation(computeHandle, "time"), tim);
+            float cx = 16+zoom*sin(ang);
+            float cy = 16+zoom;
+            float cz = 16+zoom*cos(ang);
+            float dx = -cx+16;
+            float dy = -cy+16;
+            float dz = -cz+16;
+            glUniform3f(glGetUniformLocation(computeHandle, "eyePos"), cx, cy, cz);
+            glUniform3f(glGetUniformLocation(computeHandle, "camForward"), dx, dy, dz);
+//            glUniform3f(glGetUniformLocation(computeHandle, "camRight"), 1, 0, 0);
+            glUniform3f(glGetUniformLocation(computeHandle, "camUp"), 0, 1, 0);
+            glDispatchCompute(texsize/16, texsize/16, 1);
+            checkErrors("Dispatch compute shader");
+
             glUseProgram(renderHandle);
             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 /*

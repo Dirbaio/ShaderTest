@@ -11,7 +11,6 @@ FFT::FFT()
     int bit = fftSize >> 1;
     this->reverseTable[0] = 0; // ?!?!?
     while ( limit < fftSize ) {
-        cout<<limit<<" "<<bit<<" "<<fftSize<<endl;
         for ( int i = 0; i < limit; i++ )
             this->reverseTable[i + limit] = this->reverseTable[i] + bit;
 
