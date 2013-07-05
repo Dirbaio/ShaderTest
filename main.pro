@@ -12,16 +12,13 @@ QMAKE_LDFLAGS += -O3
 
 LIBS += -lsfml-graphics -lsfml-window -lsfml-system -lsfml-audio -lGLEW -lGL -lGLU -lpulse -lpulse-simple
 SOURCES += main.cpp \
-    record.cpp \
-    dsp.cpp
-HEADERS += \ 
-    record.h \
-    dsp.h
+    Octree.cpp
+HEADERS += \  
+    Octree.h
 
 OTHER_FILES += \
     vertex.glsl \
     fragment.glsl \
     vertex.glsl \
     fragment.glsl \
-    fragment-fft.glsl \
     compute.comp

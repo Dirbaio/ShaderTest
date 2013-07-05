@@ -1,11 +1,12 @@
 #version 430
 
-struct block {
-    vec4 color;
+struct Node {
+    int block;
+    int children[8];
 };
 
-layout(std140, binding=1) buffer blocksBuffer {
-    block blocks [];
+layout(std140, binding=1) buffer octreeBuffer {
+    Node nodes[];
 };
 
 uniform vec3 eyePos;
@@ -15,7 +16,7 @@ uniform vec3 camUp;
 uniform image2D destTex;
 
 layout (local_size_x = 16, local_size_y = 16) in;
-
+/*
 bool getBlock(int x, int y, int z)
 {
     if(min(x, min(y, z)) < 0) return false;
@@ -24,113 +25,201 @@ bool getBlock(int x, int y, int z)
     if(blocks[ind].color.a < 0.5) return false;
     return true;
 }
-
-
-/*
-void World::traceView(const Player *playerCam, float tMax) {
-    if (!getOutOfBounds(floor(playerCam->camPos.x),floor(playerCam->camPos.y),floor(playerCam->camPos.z)) &&
-            getCube(floor(playerCam->camPos.x),floor(playerCam->camPos.y),floor(playerCam->camPos.z)).ID != 0) {
-        playerTargetsBlock = true;
-        targetedBlock = vec3f(floor(playerCam->camPos.x),floor(playerCam->camPos.y),floor(playerCam->camPos.z));
-        return;
-    }
-}
 */
-
 void main()
 {
     ivec2 storePos = ivec2(gl_GlobalInvocationID.xy);
-    vec2 p = storePos*(2.0/1024.0)-1.0;
+    vec2 screenPos = storePos*(2.0/1024.0)-1.0;
 
     //Calculate ray
     vec3 vCamForward = normalize(camForward);
     vec3 vCamRight = normalize(cross(camForward, camUp));
     vec3 vCamUp = normalize(cross(vCamRight, camForward));
-    vec3 dir = normalize(vCamForward + vCamUp*p.y + vCamRight*p.x);
-    vec3 pos = eyePos;
+    vec3 d = normalize(vCamForward + vCamUp*screenPos.y + vCamRight*screenPos.x);
+    vec3 p = eyePos;
 
-    //Setup raycast
-    vec3 vox = vec3(floor(pos.x), floor(pos.y), floor(pos.z));
-    vec3 step = vec3(0,0,0);
-    vec3 next = vec3(0,0,0);
+    //Suponemos que d > 0 siempre :)
 
-    float tMax = 100; //Max distance
-    vec3 tMaxc = vec3(tMax,tMax,tMax);
-    vec3 tDelta = vec3(tMax,tMax,tMax);
+    float tx_coef = -abs(1.0/d.x);
+    float ty_coef = -abs(1.0/d.y);
+    float tz_coef = -abs(1.0/d.z);
 
-    if (dir.x < 0) step.x = -1;
-    else step.x = 1;
-    if (dir.y < 0) step.y = -1;
-    else step.y = 1;
-    if (dir.z < 0) step.z = -1;
-    else step.z = 1;
+    float tx_bias = -tx_coef*p.x;
+    float ty_bias = -ty_coef*p.y;
+    float tz_bias = -tz_coef*p.z;
 
-    next.x = vox.x + (step.x > 0 ? 1 : 0);
-    next.y = vox.y + (step.y > 0 ? 1 : 0);
-    next.z = vox.z + (step.z > 0 ? 1 : 0);
+    //BLABLABLA
 
-    if (dir.x != 0) {
-        tDelta.x = step.x/dir.x;
-        tMaxc.x = (next.x - pos.x)/dir.x;
-    }
-    if (dir.y != 0) {
-        tDelta.y = step.y/dir.y;
-        tMaxc.y = (next.y - pos.y)/dir.y;
-    }
-    if (dir.z != 0) {
-        tDelta.z = step.z/dir.z;
-        tMaxc.z = (next.z - pos.z)/dir.z;
-    }
+    int parentstack[32];
+    float tmaxstack[32];
 
-    bool running = true;
-    float tCurr = 0;
-    float light = 0;
-    while (tCurr < tMax && running) {
-        if(tMaxc.x < tMaxc.y) {
-            if(tMaxc.x < tMaxc.z) {
-                tCurr = tMaxc.x;
-                tMaxc.x = tMaxc.x + tDelta.x;
-                vox.x = vox.x + step.x;
-                light = 1.0;
-            }
-            else {
-                tCurr = tMaxc.z;
-                vox.z = vox.z + step.z;
-                tMaxc.z = tMaxc.z + tDelta.z;
-                light = 0.4;
-            }
-        }
-        else {
-            if(tMaxc.y < tMaxc.z) {
-                tCurr = tMaxc.y;
-                vox.y = vox.y + step.y;
-                tMaxc.y = tMaxc.y + tDelta.y;
-                light = 0.7;
-            }
-            else {
-                tCurr = tMaxc.z;
-                vox.z = vox.z + step.z;
-                tMaxc.z = tMaxc.z + tDelta.z;
-                light = 0.4;
-            }
-        }
-        if(getBlock(int(vox.x),int(vox.y),int(vox.z))) {
-//            targetedBlock = vox;
-            running = false;
-        }
-    }
+    int parent = 0;
+    int idx = 0;
 
-    vec4 col = vec4(0, 0, 0, 1); //blocks[int(abs(dir.x+dir.y+dir.z)*20)];
+    int scale = 31;
+    float scale_exp2 = 1<<scale;
+    vec3 pos = vec3(-1<<scale, -1<<scale, -1<<scale);
 
-    if(!running) //Raytracing hit
+    int octant_mask = 7;
+    if (d.x > 0.0f) octant_mask ^= 1, tx_bias = 3.0 * tx_coef - tx_bias;
+    if (d.y > 0.0f) octant_mask ^= 2, ty_bias = 3.0 * ty_coef - ty_bias;
+    if (d.z > 0.0f) octant_mask ^= 4, tz_bias = 3.0 * tz_coef - tz_bias;
+
+    float t_min = max(max(scale_exp2 * tx_coef - tx_bias, scale_exp2 * ty_coef - ty_bias), scale_exp2 * tz_coef - tz_bias);
+    float t_max = min(min(-scale_exp2 * tx_coef - tx_bias, -scale_exp2 * ty_coef - ty_bias), -scale_exp2 * tz_coef - tz_bias);
+    float h = t_max;
+    t_min = max(t_min, 0.0f);
+    t_max = min(t_max, 1000000.0f);
+
+
+
+    if (-tx_bias > t_min) idx ^= 1, pos.x = 0;
+    if (-ty_bias > t_min) idx ^= 2, pos.y = 0;
+    if (-tz_bias > t_min) idx ^= 4, pos.z = 0;
+
+    int it = 100;
+    while(scale < 32 && it > 0)
     {
-        int x = int(vox.x);
-        int y = int(vox.y);
-        int z = int(vox.z);
-        int ind = x+y*32+z*32*32;
+        it--;
 
-        col = vec4(blocks[ind].color.rgb*light, 1.0);
+        float tx_corner = pos.x * tx_coef - tx_bias;
+        float ty_corner = pos.y * ty_coef - ty_bias;
+        float tz_corner = pos.z * tz_coef - tz_bias;
+        float tc_max = min(min(tx_corner, ty_corner), tz_corner);
+
+        int child = idx ^ octant_mask; // permute child slots based on the mirroring
+
+/*
+
+        //Intersect
+        float tmin_x = nodepos.x*tx_coef+tx_add;
+        float tmin_y = nodepos.y*ty_coef+ty_add;
+        float tmin_z = nodepos.z*tz_coef+tz_add;
+        float tmax_x = (nodepos.x+scale_pow2)*tx_coef+tx_add;
+        float tmax_y = (nodepos.y+scale_pow2)*ty_coef+ty_add;
+        float tmax_z = (nodepos.z+scale_pow2)*tz_coef+tz_add;
+        float tmin = min(min(tmin_x, tmin_y), tmin_z);
+        float tmax = max(max(tmax_x, tmax_y), tmax_z);
+*/
+
+        //push if intersects with ray
+        if(t_min <= t_max)
+        {
+            if(scale == 0) //We've intersected with a leaf
+                break;
+
+            // INTERSECT
+            // Intersect active t-span with the cube and evaluate
+            // tx(), ty(), and tz() at the center of the voxel.
+
+            float tv_max = min(t_max, tc_max);
+            float half = scale_exp2 * 0.5f;
+            float tx_center = half * tx_coef + tx_corner;
+            float ty_center = half * ty_coef + ty_corner;
+            float tz_center = half * tz_coef + tz_corner;
+
+            if (t_min <= tv_max)
+            {
+                // Terminate if the corresponding bit in the non-leaf mask is not set.
+                //if ((child_masks & 0x0080) == 0)
+                //    break; // at t_min (overridden with tv_min).
+
+                // PUSH
+                // Write current parent to the stack.
+                if (tc_max < h)
+                {
+                    parentstack[scale] = parent;
+                    tmaxstack[scale] = t_max;
+                }
+
+                h = tc_max;
+
+                parent = nodes[parent].children[child];
+
+                // Select child voxel that the ray enters first.
+                idx = 0;
+                scale--;
+                scale_exp2 = half;
+                if (tx_center > t_min) idx ^= 1, pos.x += scale_exp2;
+                if (ty_center > t_min) idx ^= 2, pos.y += scale_exp2;
+                if (tz_center > t_min) idx ^= 4, pos.z += scale_exp2;
+
+                // Update active t-span.
+                t_max = tv_max;
+
+                continue;
+            }
+        }
+
+        //advance
+
+        int step_mask = 0;
+        if (tx_corner <= tc_max) step_mask ^= 1, pos.x -= scale_exp2;
+        if (ty_corner <= tc_max) step_mask ^= 2, pos.y -= scale_exp2;
+        if (tz_corner <= tc_max) step_mask ^= 4, pos.z -= scale_exp2;
+
+        // Update active t-span and flip bits of the child slot index.
+        t_min = tc_max;
+        idx ^= step_mask;
+
+        // Proceed with pop if the bit flips disagree with the ray direction.
+        if ((idx & step_mask) != 0)
+        {
+            // POP
+            // Find the highest differing bit between the two positions.
+            unsigned int differing_bits = 0;
+            if ((step_mask & 1) != 0) differing_bits |= floatBitsToInt(pos.x) ^ floatBitsToInt(pos.x + scale_exp2);
+            if ((step_mask & 2) != 0) differing_bits |= floatBitsToInt(pos.y) ^ floatBitsToInt(pos.y + scale_exp2);
+            if ((step_mask & 4) != 0) differing_bits |= floatBitsToInt(pos.z) ^ floatBitsToInt(pos.z + scale_exp2);
+
+            scale = (floatBitsToInt(float(differing_bits)) >> 23) - 127; // position of the highest bit
+            scale_exp2 = 1<<scale;
+
+            // Restore parent voxel from the stack.
+            parent = parentstack[scale];
+            t_max = tmaxstack[scale];
+
+            // Round cube position and extract child slot index.
+            int shx = int(pos.x) >> scale;
+            int shy = int(pos.y) >> scale;
+            int shz = int(pos.z) >> scale;
+            pos.x = float(shx << scale);
+            pos.y = float(shy << scale);
+            pos.z = float(shz << scale);
+            idx = (shx & 1) | ((shy & 1) << 1) | ((shz & 1) << 2);
+
+            // Prevent same parent from being stored again
+            h = 0.0f;
+        }
+
     }
+
+    // Indicate miss if we are outside the octree.
+    if (scale >= 32)
+        t_min = 2.0f;
+
+    // Undo mirroring of the coordinate system.
+    if ((octant_mask & 1) == 0) pos.x = 3.0f - scale_exp2 - pos.x;
+    if ((octant_mask & 2) == 0) pos.y = 3.0f - scale_exp2 - pos.y;
+    if ((octant_mask & 4) == 0) pos.z = 3.0f - scale_exp2 - pos.z;
+
+    // Output results.
+    float hit_t = t_min;
+    vec3 hit_pos;
+    int hit_parent;
+    int hit_idx;
+    float hit_scale;
+    float epsilon = 0.0001;
+    hit_pos.x = min(max(p.x + t_min * d.x, pos.x + epsilon), pos.x + scale_exp2 - epsilon);
+    hit_pos.y = min(max(p.y + t_min * d.y, pos.y + epsilon), pos.y + scale_exp2 - epsilon);
+    hit_pos.z = min(max(p.z + t_min * d.z, pos.z + epsilon), pos.z + scale_exp2 - epsilon);
+    hit_parent = parent;
+    hit_idx = idx ^ octant_mask ^ 7;
+    hit_scale = scale;
+
+    float x = 1/hit_t;
+    vec4 col = vec4(it, it, it, 1);
+    if(it < 0) col = vec4(1, 0, 0, 1);
 
     imageStore(destTex, storePos, col);
 }
